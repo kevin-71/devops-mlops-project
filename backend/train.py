@@ -8,7 +8,11 @@ from backend.climate.service import ClimateService
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train climate ML models")
-    parser.add_argument("--refresh", action="store_true", help="Retrain even if saved artifacts already exist")
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Retrain even if saved artifacts already exist",
+    )
     args = parser.parse_args()
 
     service = ClimateService()

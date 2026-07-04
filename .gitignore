@@ -1,14 +1,25 @@
+# Python & Virtual Environments
 __pycache__/
 *.pyc
-.pytest_cache/
-.mypy_cache/
 .venv/
 .env
+
+# Tool Caches (Added)
+.ruff_cache/
+.black_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Streamlit
 .streamlit/secrets.toml
+
+# Models & Data
 models/*.joblib
 models/*.json
 models/*.pkl
 models/*.txt
 models/*.csv
 models/*.keras
+
+# System
 .DS_Store

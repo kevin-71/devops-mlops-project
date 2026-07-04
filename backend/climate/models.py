@@ -71,7 +71,12 @@ def _build_cnn(input_shape: tuple[int, int]) -> Any:
     model = Sequential(
         [
             Input(shape=input_shape),
-            Conv1D(filters=32, kernel_size=2, activation="relu", kernel_regularizer=l2(0.001)),
+            Conv1D(
+                filters=32,
+                kernel_size=2,
+                activation="relu",
+                kernel_regularizer=l2(0.001),
+            ),
             Flatten(),
             Dense(32, activation="relu"),
             Dropout(0.1),
@@ -89,7 +94,11 @@ class SimpleGCN(Layer):
         self.units = units
 
     def build(self, input_shape):
-        self.W = self.add_weight(shape=(input_shape[-1], self.units), initializer="glorot_uniform", trainable=True)
+        self.W = self.add_weight(
+            shape=(input_shape[-1], self.units),
+            initializer="glorot_uniform",
+            trainable=True,
+        )
         self.A = self.add_weight(shape=(input_shape[1], input_shape[1]), initializer="ones", trainable=True)
 
     def call(self, inputs):
