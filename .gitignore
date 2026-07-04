@@ -13,3 +13,4 @@ models/*.csv
 models/*.keras
 .DS_Store
 /data
+/models
