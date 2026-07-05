@@ -25,3 +25,5 @@ models/*.keras
 /data
 /models
 .env
+
+PRESENTATION.md
