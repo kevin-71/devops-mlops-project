@@ -38,3 +38,20 @@ services:
       - BACKEND_URL=http://backend:8000
     depends_on:
       - backend
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    depends_on:
+      - backend
+    environment:
+      - MODEL_DIR=/app/models
+      - DATA_DIR=/app/data
+      - STAGING_URL=http://backend:8000/forecast
+      - RMSE_THRESHOLD=0.5
+      - LATENCY_THRESHOLD_MS=500
+    volumes:
+      - ./:/app
+    command: >
+      sh -c "sleep 8 && echo '=== TRAIN START ===' && python -u -m backend.train --refresh && echo '=== TRAIN END ===' && echo '=== QUALITY GATES START ===' && python -u scripts/quality_gates.py || true && echo '=== QUALITY GATES END ===' && echo '=== SUMMARY ===' && cat models/climate_summary.json || true && echo '=== PRODUCTION MARKER ===' && cat models/production.json || true; tail -f /dev/null"
