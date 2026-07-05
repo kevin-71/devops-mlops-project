@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+from datetime import datetime, timezone
 from typing import Any
 
 import joblib
@@ -153,9 +154,23 @@ class ClimateService:
                 return self._public_state(cached)
 
         mlflow_active = _configure_mlflow()
-        run_context = mlflow.start_run(run_name="climate-training") if mlflow_active else contextlib.nullcontext()
+        # A shared, human-readable identifier for this training pass. Every
+        # nested run (Linear Regression, XGBoost, ANN, CNN, GCN, ...) gets
+        # tagged with the same session_id, and the parent run's name embeds
+        # it too. Without this, runs from different training sessions are
+        # only distinguishable by "Created" timestamp, and the DagsHub/MLflow
+        # table interleaves them by model name — several sessions' "ANN" runs
+        # end up sitting next to each other with no easy way to tell which
+        # session each one belongs to. Filter/sort by the "session_id" tag
+        # column (or search `tags.session_id = '...'`) to see one session's
+        # runs together.
+        session_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        run_context = mlflow.start_run(run_name=f"climate-training-{session_id}") if mlflow_active else contextlib.nullcontext()
 
         with run_context:
+            if mlflow_active:
+                mlflow.set_tag("session_id", session_id)
+
             climate_frame = build_climate_frame()
             ml_frame = build_ml_frame(climate_frame)
             split = split_time_series(ml_frame)
@@ -169,7 +184,13 @@ class ClimateService:
                     }
                 )
 
-            result = train_and_evaluate_models(split.X_train, split.y_train, split.X_test, split.y_test)
+            result = train_and_evaluate_models(
+                split.X_train,
+                split.y_train,
+                split.X_test,
+                split.y_test,
+                session_id=session_id if mlflow_active else None,
+            )
             best_predictions = np.asarray(result["predictions"][result["best_model_name"]])
             residuals = split.y_test.to_numpy() - best_predictions
             noise_scale = float(np.std(residuals)) if len(residuals) else 0.0

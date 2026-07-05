@@ -5,9 +5,15 @@ services:
       dockerfile: Dockerfile.backend
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - MODEL_DIR=/app/models
       - DATA_DIR=/app/data
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+
   prometheus:
     image: prom/prometheus:latest
     volumes:

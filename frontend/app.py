@@ -61,10 +61,10 @@ st.markdown(
 )
 
 
-def _request(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+def _request(method: str, path: str, timeout: int = 120, **kwargs: Any) -> dict[str, Any]:
     if not BACKEND_URL:
         raise RuntimeError("Backend URL not configured")
-    response = requests.request(method, f"{BACKEND_URL}{path}", timeout=120, **kwargs)
+    response = requests.request(method, f"{BACKEND_URL}{path}", timeout=timeout, **kwargs)
     response.raise_for_status()
     return response.json()
 
@@ -72,22 +72,24 @@ def _request(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
 @st.cache_data(show_spinner=False)
 def load_status() -> dict[str, Any]:
     if BACKEND_URL:
-        try:
-            return _request("GET", "/status")
-        except Exception:
-            pass
+        return _request("GET", "/status")
     if LOCAL_SERVICE is None:
         raise RuntimeError("Local backend service is unavailable")
     return LOCAL_SERVICE.get_status()
 
 
-@st.cache_data(show_spinner=False)
 def load_train_result() -> dict[str, Any]:
+    # NOTE: this used to be wrapped in `except Exception: pass`, which
+    # silently swallowed timeouts, connection errors and backend 500s. That
+    # made a failed retrain look identical to a successful one from the
+    # user's point of view (no error shown, stale data reused). Any failure
+    # here must now be visible to the caller so the "Entraîner" button can
+    # report it instead of silently no-op'ing.
+    # Training (especially the Keras models) can comfortably exceed the
+    # default 120s timeout used for read-only calls, so this uses a much
+    # longer timeout specifically for training.
     if BACKEND_URL:
-        try:
-            return _request("POST", "/train", json={"refresh": True})
-        except Exception:
-            pass
+        return _request("POST", "/train", timeout=900, json={"refresh": True})
     if LOCAL_SERVICE is None:
         raise RuntimeError("Local backend service is unavailable")
     return LOCAL_SERVICE.train(force=True)
@@ -95,13 +97,10 @@ def load_train_result() -> dict[str, Any]:
 
 def get_forecast(months_ahead: int, model_name: str | None) -> dict[str, Any]:
     if BACKEND_URL:
-        try:
-            params = {"months_ahead": months_ahead}
-            if model_name:
-                params["model_name"] = model_name
-            return _request("GET", "/forecast", params=params)
-        except Exception:
-            pass
+        params = {"months_ahead": months_ahead}
+        if model_name:
+            params["model_name"] = model_name
+        return _request("GET", "/forecast", params=params)
     if LOCAL_SERVICE is None:
         raise RuntimeError("Local backend service is unavailable")
     return LOCAL_SERVICE.forecast(months_ahead=months_ahead, model_name=model_name)
@@ -120,16 +119,24 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    status = load_status()
+    try:
+        status = load_status()
+    except Exception as exc:
+        st.error(f"Impossible de récupérer le statut du backend : {exc}")
+        st.stop()
 
     with st.sidebar:
         st.header("Pilotage")
         st.caption("L'API backend est utilisée si `BACKEND_URL` est défini.")
         if st.button("Entraîner / recharger les modèles", use_container_width=True):
             load_status.clear()
-            load_train_result.clear()
-            status = load_train_result()
-            st.success("Modèles entraînés.")
+            with st.spinner("Entraînement en cours (peut prendre plusieurs minutes avec ANN/CNN/GCN)..."):
+                try:
+                    status = load_train_result()
+                except Exception as exc:
+                    st.error(f"Échec de l'entraînement : {exc}")
+                else:
+                    st.success("Modèles entraînés.")
 
         selected_model = st.selectbox(
             "Modèle de prévision",
