@@ -1,0 +1,8 @@
+[core]
+    remote = dagshub
+['remote "localstore"']
+    url = ../../dvc-storage
+['remote "dagshub"']
+    url = https://dagshub.com/kevin-71/climate-mlops.dvc
+    user = kevin-71
+    auth = basic

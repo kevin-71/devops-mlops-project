@@ -20,6 +20,6 @@ models/*.pkl
 models/*.txt
 models/*.csv
 models/*.keras
-
-# System
 .DS_Store
+/data
+/models
