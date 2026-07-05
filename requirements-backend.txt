@@ -14,4 +14,6 @@ tensorflow==2.20.0
 pytest==8.3.4
 httpx==0.28.1
 mlflow==2.19.0
-dagshub==0.5.10
+dagshub==0.5.10git branch -m feature/prometheus
+prometheus-client
+prometheus-fastapi-instrumentator
