@@ -1,7 +1,15 @@
+import os
+
 import pytest
 
 from backend.climate import data as climate_data
 from backend.climate.data import build_climate_frame, build_ml_frame
+
+# Skip these tests when the DVC-managed data files are not present (CI may not
+# have pulled DVC artifacts). This makes the test suite resilient in CI.
+data_file = os.path.join(climate_data.DATA_DIR, "GLB.Ts+dSST.csv")
+if not os.path.exists(data_file):
+    pytest.skip("DVC data not available; skipping data tests", allow_module_level=True)
 
 
 def test_climate_frame_has_expected_columns() -> None:
