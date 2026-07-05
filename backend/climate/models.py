@@ -24,7 +24,6 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     tf = None
     Layer = object  # fallback so `class SimpleGCN(Layer)` below doesn't crash at import time
-
 import mlflow
 import mlflow.sklearn
 

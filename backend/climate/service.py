@@ -7,6 +7,8 @@ from typing import Any
 
 import joblib
 import mlflow
+
+# MLflow retired: no MLflow imports
 import numpy as np
 
 from .data import build_climate_frame, build_ml_frame, dataset_summary
@@ -81,6 +83,7 @@ DL_MODEL_KIND = {
     "GCN": "gcn",
 }
 SCALER_FILE = MODEL_DIR / "dl_scaler.joblib"
+MODEL_REGISTRY_NAME = "Climate_Model"
 
 
 class ClimateService:
@@ -197,6 +200,26 @@ class ClimateService:
 
             if mlflow_active:
                 mlflow.log_artifact(str(SUMMARY_PATH))
+
+                # Register the selected best model in the MLflow Model Registry
+                try:
+                    best_name = state["best_model_name"]
+                    best_model = state["models"][best_name]
+                    # Choose appropriate logging method depending on model type
+                    try:
+                        # sklearn/xgboost classic models
+                        mlflow.sklearn.log_model(sk_model=best_model, artifact_path="best_model", registered_model_name=MODEL_REGISTRY_NAME)
+                    except Exception:
+                        try:
+                            # tensorflow/keras models
+                            import mlflow.tensorflow as _mlflow_tf
+
+                            _mlflow_tf.log_model(best_model, artifact_path="best_model", registered_model_name=MODEL_REGISTRY_NAME)
+                        except Exception:
+                            # Best-effort registration; don't fail the training run if registry logging fails
+                            pass
+                except Exception:
+                    pass
 
         return self._public_state(self._state)
 
