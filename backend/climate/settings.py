@@ -2,8 +2,16 @@ import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = PROJECT_ROOT / "data"
-MODEL_DIR = PROJECT_ROOT / "models"
+# NOTE: previously these ignored the DATA_DIR/MODEL_DIR environment
+# variables entirely and always resolved relative to PROJECT_ROOT. That
+# made the `MODEL_DIR=/app/models` / `DATA_DIR=/app/data` entries in
+# docker-compose.yml silent no-ops: the container would still write to
+# whatever PROJECT_ROOT/models resolves to inside the image, not to
+# /app/models. Read the env vars first, and only fall back to the
+# PROJECT_ROOT-relative path when they aren't set (e.g. running locally
+# without Docker).
+DATA_DIR = Path(os.getenv("DATA_DIR", str(PROJECT_ROOT / "data")))
+MODEL_DIR = Path(os.getenv("MODEL_DIR", str(PROJECT_ROOT / "models")))
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
