@@ -1,3 +1,111 @@
+# Climate MLops Project
+
+Résumé
+------
+Ce projet est une démonstration MLOps pour un modèle de prévision climatique. Il inclut :
+- Entraînement et évaluation de modèles (sklearn, XGBoost, TensorFlow)
+- Enregistrement des artefacts et résumé local
+- Pipeline de promotion de modèles (quality gates) avec possibilité d'intégration MLflow
+- Intégration DVC pour les données
+- CI GitHub Actions pour tests et lint
+
+Architecture
+------------
+
+Les composants principaux :
+
+- `backend/` : API FastAPI et logique d'entraînement/prédiction
+  - `backend/main.py` : endpoints FastAPI (`/health`, `/status`, `/train`, `/metrics`, `/forecast`)
+  - `backend/train.py` : point d'entrée CLI et fonction `run_training()` utilisée dans les tests
+  - `backend/climate/` : code métier (données, features, modèles, service)
+    - `data.py` : chargement et préparation des données (DVC)
+    - `features.py` : transformations et split temporel
+    - `models.py` : définition et entraînement des modèles candidats
+    - `service.py` : façade `ClimateService` qui orchestre entraînement, sauvegarde et prévisions
+
+- `frontend/` : UI légère (streamlit ou app) qui consomme l'API backend
+- `models/` : artefacts produits (modèles, `climate_summary.json`, `production.json`)
+- `data/` : données versionnées par DVC (non commitées dans le repo)
+- `scripts/` : utilitaires
+  - `scripts/quality_gates.py` : exécute les quality gates (RMSE, latence, smoke tests) et promeut le modèle via MLflow ou marque localement
+
+- `Dockerfile.backend`, `Dockerfile.frontend`, `docker-compose.yml` : conteneurisation et orchestration locale
+- `.github/workflows/` : workflows CI (tests et promotion)
+
+Flow de promotion (résumé)
+-------------------------
+
+1. Entraînement : `python -m backend.train --refresh` (ou via `docker compose` pipeline). Le meilleur modèle est identifié.
+2. Enregistrement : si `MLFLOW_TRACKING_URI` est configuré, le meilleur modèle est loggé et inscrit dans le Model Registry (`Climate_Model`). Sinon, les artefacts sont sauvegardés localement (`models/climate_summary.json`).
+3. Déploiement Staging : Docker compose démarre le service backend pour tester la version candidate.
+4. Quality Gates : `scripts/quality_gates.py` vérifie des gates (ex. RMSE threshold, latency, smoke test).
+5. Promotion : si toutes les gates passent, le script promeut la version dans MLflow (ou écrit `models/production.json` en fallback). Si une gate échoue, la production n'est pas modifiée.
+
+Commandes communes
+------------------
+
+- Build & démarrer tout localement :
+```bash
+docker compose up -d --build
+```
+- Suivre les logs du pipeline :
+```bash
+docker compose logs -f pipeline
+```
+- Lancer l'entraînement localement (sans docker) :
+```bash
+python -m backend.train --refresh
+```
+- Exécuter les quality gates localement :
+```bash
+python scripts/quality_gates.py
+```
+- Tests & lint (local) :
+```bash
+pip install -r requirements-backend.txt
+pip install -r requirements-dev.txt
+black --check .
+ruff check .
+pytest -q
+```
+
+Configuration CI / Secrets
+-------------------------
+
+Pour activer la promotion via MLflow (ex : DagsHub) et exécuter `dvc pull` dans CI, ajoutez ces secrets dans GitHub :
+- `MLFLOW_TRACKING_URI` (ex: `https://dagshub.com/OWNER/REPO.mlflow`)
+- `MLFLOW_TRACKING_USERNAME` et `MLFLOW_TRACKING_PASSWORD` (si nécessaires)
+- `DAGSHUB_USER_TOKEN`, `DAGSHUB_REPO_OWNER` (si vous utilisez DagsHub pour DVC)
+
+Notes importantes
+---------------
+
+- Les données sont versionnées avec DVC et stockées en remote : `data/` n'est pas obligatoire en CI. Les tests de données skipent si les fichiers DVC manquent.
+- Le pipeline supporte deux modes pour la promotion :
+  - MLflow remote (préféré) — nécessite `MLFLOW_TRACKING_URI` configuré
+  - Fallback local — crée `models/production.json` comme marqueur
+- Si vous voulez activer GPU, configurez `MLFLOW`/Docker pour utiliser `nvidia-container-toolkit` et une image TF GPU.
+
+Structure des fichiers (rapide)
+-----------------------------
+
+- `README.md` — ce fichier
+- `docker-compose.yml` — services `backend`, `frontend`, `pipeline` (exécute training + gates)
+- `requirements-backend.txt` — dépendances runtime
+- `requirements-dev.txt` — outils de lint / test
+- `scripts/quality_gates.py` — implémentation des gates & promotion
+- `backend/` — code applicatif (voir ci‑dessus)
+- `tests/` — suite de tests unitaires
+
+Contact / Prochaine étape
+------------------------
+
+Si vous voulez :
+- j'ajoute un README plus détaillé avec diagramme mermaid ;
+- j'ajoute un script `ci-local.sh` pour exécuter les checks localement avant push ;
+- j'active l'affichage de `models/production.json` dans les logs CI.
+
+Bonne continuation — dites-moi quelle option vous voulez que j'ajoute en priorité.
 # Climate ML MLOps Project
 
 Application MLOps pour comparer plusieurs modèles de régression sur l'évolution conjointe des anomalies de température globale et du CO2 atmosphérique.
