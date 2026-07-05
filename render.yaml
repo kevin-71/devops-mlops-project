@@ -4,7 +4,7 @@ services:
     name: backend
     env: docker
     dockerfilePath: Dockerfile.backend
-    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    dockerCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
     plan: starter
     healthCheckPath: /health
 
@@ -12,7 +12,7 @@ services:
     name: frontend
     env: docker
     dockerfilePath: Dockerfile.frontend
-    startCommand: streamlit run frontend/app.py --server.port $PORT --server.address 0.0.0.0
+    dockerCommand: streamlit run frontend/app.py --server.port $PORT --server.address 0.0.0.0
     plan: starter
     healthCheckPath: /
 
