@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .settings import DATA_DIR, LEGACY_DATA_DIR
+from .settings import DATA_DIR
 
 MONTHS = [
     "Jan",
@@ -27,11 +27,10 @@ CO2_FILENAME = "co2_mm_mlo.csv"
 
 
 def _resolve_data_file(filename: str) -> Path:
-    for base_dir in (DATA_DIR, LEGACY_DATA_DIR):
-        candidate = base_dir / filename
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError(f"Unable to locate {filename} in data/ or code/")
+    candidate = DATA_DIR / filename
+    if candidate.exists():
+        return candidate
+    raise FileNotFoundError(f"Unable to locate {filename} in data/")
 
 
 def load_temperature_raw() -> pd.DataFrame:

@@ -1,16 +1,66 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 from typing import Any
 
 import joblib
+import mlflow
 import numpy as np
 
 from .data import build_climate_frame, build_ml_frame, dataset_summary
 from .features import split_time_series
 from .forecasting import build_future_frame, forecast_temperature
+
+# NOTE: .models must be imported before mlflow. It imports tensorflow
+# internally before mlflow for the same reason (see comment in models.py):
+# importing mlflow first can break TensorFlow's native DLL loading on
+# Windows. Since Python only executes a module's imports once, mlflow must
+# not be imported anywhere above this line either.
 from .models import SimpleGCN, train_and_evaluate_models
-from .settings import MODEL_DIR
+from .settings import (
+    DAGSHUB_REPO_NAME,
+    DAGSHUB_REPO_OWNER,
+    DAGSHUB_USER_TOKEN,
+    MLFLOW_EXPERIMENT_NAME,
+    MLFLOW_TRACKING_PASSWORD,
+    MLFLOW_TRACKING_URI,
+    MLFLOW_TRACKING_USERNAME,
+    MODEL_DIR,
+)
+
+
+def _configure_mlflow() -> bool:
+    """Point MLflow at DagsHub if credentials are available.
+
+    Two supported setups, tried in order:
+    1. DAGSHUB_USER_TOKEN set -> use dagshub.init(), which configures both
+       the tracking URI and auth from that single token.
+    2. MLFLOW_TRACKING_URI + MLFLOW_TRACKING_USERNAME/PASSWORD set -> classic
+       manual basic-auth setup.
+
+    Returns True if tracking is active, False if neither is configured, in
+    which case training proceeds exactly as before with no MLflow calls made.
+    """
+    if DAGSHUB_USER_TOKEN:
+        os.environ.setdefault("DAGSHUB_USER_TOKEN", DAGSHUB_USER_TOKEN)
+        import dagshub
+
+        dagshub.init(repo_owner=DAGSHUB_REPO_OWNER, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
+        mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+        return True
+
+    if not MLFLOW_TRACKING_URI:
+        return False
+    if MLFLOW_TRACKING_USERNAME:
+        os.environ.setdefault("MLFLOW_TRACKING_USERNAME", MLFLOW_TRACKING_USERNAME)
+    if MLFLOW_TRACKING_PASSWORD:
+        os.environ.setdefault("MLFLOW_TRACKING_PASSWORD", MLFLOW_TRACKING_PASSWORD)
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+    return True
+
 
 ARTIFACT_PATH = MODEL_DIR / "climate_artifacts.joblib"
 SUMMARY_PATH = MODEL_DIR / "climate_summary.json"
@@ -102,31 +152,52 @@ class ClimateService:
             if cached is not None:
                 return self._public_state(cached)
 
-        climate_frame = build_climate_frame()
-        ml_frame = build_ml_frame(climate_frame)
-        split = split_time_series(ml_frame)
+        mlflow_active = _configure_mlflow()
+        run_context = mlflow.start_run(run_name="climate-training") if mlflow_active else contextlib.nullcontext()
 
-        result = train_and_evaluate_models(split.X_train, split.y_train, split.X_test, split.y_test)
-        best_predictions = np.asarray(result["predictions"][result["best_model_name"]])
-        residuals = split.y_test.to_numpy() - best_predictions
-        noise_scale = float(np.std(residuals)) if len(residuals) else 0.0
+        with run_context:
+            climate_frame = build_climate_frame()
+            ml_frame = build_ml_frame(climate_frame)
+            split = split_time_series(ml_frame)
 
-        state = {
-            "summary": dataset_summary(climate_frame),
-            "metrics": result["metrics"],
-            "best_model_name": result["best_model_name"],
-            "available_models": list(result["models"].keys()),
-            "noise_scale": noise_scale,
-            "climate_frame": climate_frame,
-            "ml_frame": ml_frame,
-            "dates_test": split.dates_test.tolist(),
-            "y_test": split.y_test.tolist(),
-            "predictions": result["predictions"],
-            "models": result["models"],
-            "artifacts": result.get("artifacts", {}),
-        }
-        self._state = self._serialize_state(state)
-        self._persist_state(self._state)
+            if mlflow_active:
+                mlflow.log_params(
+                    {
+                        "n_train": len(split.X_train),
+                        "n_test": len(split.X_test),
+                        "n_features": split.X_train.shape[1],
+                    }
+                )
+
+            result = train_and_evaluate_models(split.X_train, split.y_train, split.X_test, split.y_test)
+            best_predictions = np.asarray(result["predictions"][result["best_model_name"]])
+            residuals = split.y_test.to_numpy() - best_predictions
+            noise_scale = float(np.std(residuals)) if len(residuals) else 0.0
+
+            if mlflow_active:
+                mlflow.set_tag("best_model", result["best_model_name"])
+                mlflow.log_metrics({f"best_{k}": v for k, v in result["metrics"][result["best_model_name"]].items()})
+
+            state = {
+                "summary": dataset_summary(climate_frame),
+                "metrics": result["metrics"],
+                "best_model_name": result["best_model_name"],
+                "available_models": list(result["models"].keys()),
+                "noise_scale": noise_scale,
+                "climate_frame": climate_frame,
+                "ml_frame": ml_frame,
+                "dates_test": split.dates_test.tolist(),
+                "y_test": split.y_test.tolist(),
+                "predictions": result["predictions"],
+                "models": result["models"],
+                "artifacts": result.get("artifacts", {}),
+            }
+            self._state = self._serialize_state(state)
+            self._persist_state(self._state)
+
+            if mlflow_active:
+                mlflow.log_artifact(str(SUMMARY_PATH))
+
         return self._public_state(self._state)
 
     def load_or_train(self) -> dict[str, Any]:

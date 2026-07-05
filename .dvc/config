@@ -1,8 +1,9 @@
 [core]
-    remote = dagshub
+    remote = s3remote
 ['remote "localstore"']
     url = ../../dvc-storage
 ['remote "dagshub"']
     url = https://dagshub.com/kevin-71/climate-mlops.dvc
-    user = kevin-71
-    auth = basic
+['remote "s3remote"']
+    url = s3://climate-mlops
+    endpointurl = https://dagshub.com/api/v1/repo-buckets/s3/kevin-71
