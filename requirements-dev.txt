@@ -2,3 +2,6 @@ black
 ruff
 pre-commit
 dvc
+mlflow
+dagshub
+dvc-s3

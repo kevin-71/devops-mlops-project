@@ -9,6 +9,12 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeRegressor
 
+# NOTE: tensorflow must be imported before mlflow. On Windows, importing
+# mlflow first can load native DLLs (protobuf, etc.) that conflict with
+# TensorFlow's own native runtime, causing a cryptic
+# "DLL load failed while importing _pywrap_tensorflow_internal" error even
+# though tensorflow works fine on its own. Importing tensorflow first avoids
+# the conflict.
 try:
     import tensorflow as tf
     from tensorflow.keras import Model, Sequential
@@ -17,6 +23,26 @@ try:
     from tensorflow.keras.regularizers import l2
 except Exception:  # pragma: no cover - optional dependency
     tf = None
+    Layer = object  # fallback so `class SimpleGCN(Layer)` below doesn't crash at import time
+
+import mlflow
+import mlflow.sklearn
+
+# NOTE: these are imported once at module load time and aliased so that no
+# function below ever contains a statement like `import mlflow.xgboost`.
+# Any `import mlflow.xxx` inside a function body causes Python to treat
+# `mlflow` as a local variable for the *entire* function (even before the
+# import line is reached), which raises UnboundLocalError as soon as
+# `mlflow.active_run()` is called earlier in that function.
+try:
+    import mlflow.xgboost as mlflow_xgboost
+except Exception:  # pragma: no cover - optional dependency
+    mlflow_xgboost = None
+
+try:
+    import mlflow.tensorflow as mlflow_tensorflow
+except Exception:  # pragma: no cover - optional dependency
+    mlflow_tensorflow = None
 
 try:
     from xgboost import XGBRegressor
@@ -26,6 +52,39 @@ except Exception:  # pragma: no cover - optional dependency
 
 def _rmse(y_true, y_pred) -> float:
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
+
+
+def _log_run_to_mlflow(name: str, model: Any, metrics: dict[str, float], kind: str) -> None:
+    """Log one model's params/metrics/artifact as a nested MLflow run.
+
+    No-ops silently if there is no active parent run (i.e. MLflow tracking
+    was not configured by the caller), so this stays safe to call from
+    tests or local runs without a DagsHub/MLflow URI set.
+    """
+    if mlflow.active_run() is None:
+        return
+
+    with mlflow.start_run(run_name=name, nested=True):
+        mlflow.set_tag("model_family", kind)
+        try:
+            if kind == "classic" and hasattr(model, "get_params"):
+                mlflow.log_params({k: v for k, v in model.get_params().items() if v is not None})
+        except Exception:
+            pass
+
+        mlflow.log_metrics(metrics)
+
+        try:
+            if kind == "classic":
+                if name == "XGBoost" and mlflow_xgboost is not None:
+                    mlflow_xgboost.log_model(model, artifact_path="model")
+                else:
+                    mlflow.sklearn.log_model(model, artifact_path="model")
+            elif kind == "keras" and mlflow_tensorflow is not None:
+                mlflow_tensorflow.log_model(model, artifact_path="model")
+        except Exception:
+            # Model logging is best-effort; metrics/params are the priority.
+            pass
 
 
 def build_model_candidates() -> dict[str, Any]:
@@ -137,6 +196,7 @@ def train_and_evaluate_models(X_train, y_train, X_test, y_test) -> dict[str, Any
             "mae": float(mean_absolute_error(y_test, prediction)),
             "r2": float(r2_score(y_test, prediction)),
         }
+        _log_run_to_mlflow(name, model, metrics[name], kind="classic")
 
     if tf is not None:
         scaler = StandardScaler()
@@ -162,6 +222,7 @@ def train_and_evaluate_models(X_train, y_train, X_test, y_test) -> dict[str, Any
             "mae": float(mean_absolute_error(y_test, ann_prediction)),
             "r2": float(r2_score(y_test, ann_prediction)),
         }
+        _log_run_to_mlflow("ANN", ann_model, metrics["ANN"], kind="keras")
 
         cnn_train = X_train_scaled.reshape(X_train_scaled.shape[0], X_train_scaled.shape[1], 1)
         cnn_test = X_test_scaled.reshape(X_test_scaled.shape[0], X_test_scaled.shape[1], 1)
@@ -183,6 +244,7 @@ def train_and_evaluate_models(X_train, y_train, X_test, y_test) -> dict[str, Any
             "mae": float(mean_absolute_error(y_test, cnn_prediction)),
             "r2": float(r2_score(y_test, cnn_prediction)),
         }
+        _log_run_to_mlflow("CNN", cnn_model, metrics["CNN"], kind="keras")
 
         gcn_model = _build_gcn((cnn_train.shape[1], 1))
         gcn_model.fit(
@@ -202,6 +264,7 @@ def train_and_evaluate_models(X_train, y_train, X_test, y_test) -> dict[str, Any
             "mae": float(mean_absolute_error(y_test, gcn_prediction)),
             "r2": float(r2_score(y_test, gcn_prediction)),
         }
+        _log_run_to_mlflow("GCN", gcn_model, metrics["GCN"], kind="keras")
         artifacts["dl_scaler"] = scaler
 
     best_model_name = min(metrics, key=lambda candidate: metrics[candidate]["rmse"])
