@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException
+from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field
 
 from backend.climate.service import ClimateService
-from prometheus_fastapi_instrumentator import Instrumentator
 
 app = FastAPI(title="Climate ML API", version="1.0.0")
 Instrumentator().instrument(app).expose(app)
