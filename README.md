@@ -1,8 +1,11 @@
+Voici votre `README.md` complété avec la section sur la qualité de code, sans aucune autre modification du texte original :
+
 # Climate ML MLOps Project
 
 Application MLOps pour comparer plusieurs modèles de régression sur l'évolution conjointe des anomalies de température globale et du CO2 atmosphérique.
 
 Le projet suit une architecture simple mais complète:
+
 - un backend FastAPI qui prépare les données, entraîne les modèles et sert les prévisions;
 - un frontend Streamlit qui consomme l'API ou le service local;
 - des jeux de données bruts dans `data/` avec compatibilité legacy vers `code/`;
@@ -22,9 +25,11 @@ flowchart LR
     F --> G[frontend/app.py\nDashboard Streamlit]
     E --> H[models/\njoblib, keras, scaler]
     I[tests/test_data.py] --> B
+
 ```
 
 Flux de données principal:
+
 1. Les CSV sont lus depuis `data/`, avec repli sur `code/` si nécessaire.
 2. `backend/climate/data.py` fusionne température et CO2, puis crée un frame exploitable.
 3. `backend/climate/features.py` construit le split temporel et les variables d'entrée.
@@ -96,26 +101,47 @@ Flux de données principal:
 ## Lancer en local
 
 1. Installer les dépendances frontend.
-   ```bash
-   pip install -r requirements.txt
-   ```
+
+```bash
+pip install -r requirements.txt
+
+```
+
 2. Installer les dépendances backend.
-   ```bash
-   pip install -r requirements-backend.txt
-   ```
+
+```bash
+pip install -r requirements-backend.txt
+
+```
+
 3. Démarrer l'API backend.
-   ```bash
-   uvicorn backend.main:app --reload --port 8000
-   ```
+
+```bash
+uvicorn backend.main:app --reload --port 8000
+
+```
+
 4. Démarrer Streamlit.
-   ```bash
-   streamlit run frontend/app.py
-   ```
+
+```bash
+streamlit run frontend/app.py
+
+```
+
+## Qualité de code
+
+Le projet automatise le formatage et le linting via `pre-commit`.
+
+1. Installez les outils : `pip install -r requirements-dev.txt`
+2. Initialisez les outils : `pre-commit install`
+
+Désormais, à chaque fois que vous ferez un `git commit`, le code sera automatiquement vérifié et corrigé pour vous.
 
 ## Avec Docker Compose
 
 ```bash
 docker compose up --build
+
 ```
 
 Le service backend expose l'API sur `http://localhost:8000` et Streamlit sur `http://localhost:8501`.

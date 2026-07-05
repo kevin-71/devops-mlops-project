@@ -1,0 +1,8 @@
+[tool.black]
+line-length = 200
+extend-exclude = '''/(data|code)/'''
+
+[tool.ruff]
+line-length = 200
+extend-exclude = ["data", "code"]
+select = ["E", "F", "I"]

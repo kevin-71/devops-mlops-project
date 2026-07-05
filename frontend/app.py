@@ -34,7 +34,7 @@ st.markdown(
     <style>
         .stApp {
             background:
-                radial-gradient(circle at top left, rgba(12, 44, 67, 0.92), rgba(8, 15, 28, 0.98)),
+                radial-gradient(circle at top left, rgba(12, 44, 67, 0.92), rgba(8, 15, 28, 0.98)), 
                 linear-gradient(180deg, #08111c 0%, #0b1726 100%);
             color: #edf6ff;
         }
@@ -115,7 +115,10 @@ def render_metric_card(label: str, value: str) -> None:
 
 
 def main() -> None:
-    st.markdown("<div class='hero'><h1>Climate ML MLOps</h1><p>Streamlit dashboard for the temperature anomaly and CO2 regression pipeline.</p></div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='hero'><h1>Climate ML MLOps</h1><p>Streamlit dashboard for the temperature anomaly and CO2 regression pipeline.</p></div>",  # noqa: E501
+        unsafe_allow_html=True,
+    )
 
     status = load_status()
 
@@ -185,8 +188,19 @@ def main() -> None:
         for model_name, preds in status["predictions"].items():
             comparison[model_name] = preds
         plot_frame = comparison.melt(id_vars=["Date", "Actual"], var_name="Model", value_name="Prediction")
-        fig = px.line(plot_frame, x="Date", y="Prediction", color="Model", title="Comparaison des prédictions sur le test")
-        fig.add_scatter(x=comparison["Date"], y=comparison["Actual"], name="Actual", line=dict(color="black", width=3))
+        fig = px.line(
+            plot_frame,
+            x="Date",
+            y="Prediction",
+            color="Model",
+            title="Comparaison des prédictions sur le test",
+        )
+        fig.add_scatter(
+            x=comparison["Date"],
+            y=comparison["Actual"],
+            name="Actual",
+            line=dict(color="black", width=3),
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     with tab_forecast:
@@ -202,10 +216,13 @@ def main() -> None:
             chart_future = future.rename(columns={"Temperature_Forecast": "Value"})
             chart_history["Segment"] = "Historique"
             chart_future["Segment"] = "Prévision"
-            forecast_chart = pd.concat([
-                chart_history[["Date", "Value", "Segment"]],
-                chart_future[["Date", "Value", "Segment"]],
-            ], ignore_index=True)
+            forecast_chart = pd.concat(
+                [
+                    chart_history[["Date", "Value", "Segment"]],
+                    chart_future[["Date", "Value", "Segment"]],
+                ],
+                ignore_index=True,
+            )
             fig = px.line(
                 forecast_chart,
                 x="Date",

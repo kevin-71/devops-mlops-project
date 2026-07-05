@@ -6,10 +6,12 @@ from sklearn.linear_model import LinearRegression
 
 
 def fit_co2_trend(climate_frame: pd.DataFrame) -> LinearRegression:
-    features = pd.DataFrame({
-        "year": climate_frame["year"],
-        "year_sq": climate_frame["year"] ** 2,
-    })
+    features = pd.DataFrame(
+        {
+            "year": climate_frame["year"],
+            "year_sq": climate_frame["year"] ** 2,
+        }
+    )
     target = climate_frame["co2"]
     model = LinearRegression()
     model.fit(features, target)
@@ -24,10 +26,12 @@ def build_future_frame(climate_frame: pd.DataFrame, months_ahead: int) -> pd.Dat
     future["month"] = future["Date"].dt.month
 
     trend_model = fit_co2_trend(climate_frame)
-    co2_features = pd.DataFrame({
-        "year": future["year"],
-        "year_sq": future["year"] ** 2,
-    })
+    co2_features = pd.DataFrame(
+        {
+            "year": future["year"],
+            "year_sq": future["year"] ** 2,
+        }
+    )
     future["co2"] = trend_model.predict(co2_features)
     return future
 

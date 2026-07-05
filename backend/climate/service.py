@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Any
 
 import joblib
 import numpy as np
-import pandas as pd
 
 from .data import build_climate_frame, build_ml_frame, dataset_summary
 from .features import split_time_series
@@ -16,7 +14,12 @@ from .settings import MODEL_DIR
 
 ARTIFACT_PATH = MODEL_DIR / "climate_artifacts.joblib"
 SUMMARY_PATH = MODEL_DIR / "climate_summary.json"
-SERIALIZABLE_MODEL_NAMES = {"Linear Regression", "Decision Tree", "Random Forest", "XGBoost"}
+SERIALIZABLE_MODEL_NAMES = {
+    "Linear Regression",
+    "Decision Tree",
+    "Random Forest",
+    "XGBoost",
+}
 DL_MODEL_FILES = {
     "ANN": MODEL_DIR / "ann_model.keras",
     "CNN": MODEL_DIR / "cnn_model.keras",
@@ -53,9 +56,7 @@ class ClimateService:
     def _persist_state(self, state: dict[str, Any]) -> None:
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         serializable_state = dict(state)
-        serializable_state["models"] = {
-            name: model for name, model in state["models"].items() if name in SERIALIZABLE_MODEL_NAMES
-        }
+        serializable_state["models"] = {name: model for name, model in state["models"].items() if name in SERIALIZABLE_MODEL_NAMES}
         serializable_state["artifacts"] = state.get("artifacts", {})
         joblib.dump(serializable_state, ARTIFACT_PATH)
 
@@ -157,7 +158,7 @@ class ClimateService:
             scaler=state.get("artifacts", {}).get("dl_scaler"),
         )
 
-        historical = state["climate_frame"][ ["Date", "Temperature_Anomaly"] ].copy()
+        historical = state["climate_frame"][["Date", "Temperature_Anomaly"]].copy()
         historical["Date"] = historical["Date"].dt.strftime("%Y-%m-%d")
 
         return {

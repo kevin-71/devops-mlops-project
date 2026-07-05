@@ -14,6 +14,12 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: pip install -r requirements-backend.txt
+        run: |
+          pip install -r requirements-backend.txt
+          pip install -r requirements-dev.txt
+      - name: Check code quality
+        run: |
+          black --check .
+          ruff check .
       - name: Run tests
         run: python -m pytest -q
