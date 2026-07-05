@@ -21,9 +21,22 @@ try:
     from tensorflow.keras.callbacks import EarlyStopping
     from tensorflow.keras.layers import Conv1D, Dense, Dropout, Flatten, Input, Layer
     from tensorflow.keras.regularizers import l2
-except Exception:  # pragma: no cover - optional dependency
+except Exception as _tf_import_error:  # pragma: no cover - optional dependency
+    import warnings
+
     tf = None
     Layer = object  # fallback so `class SimpleGCN(Layer)` below doesn't crash at import time
+    # NOTE: this used to be a silent `except Exception: pass`, which made it
+    # impossible to tell "TensorFlow is intentionally not installed" apart
+    # from "TensorFlow is installed but broken/incompatible and failed to
+    # import for some other reason". Surface the real cause instead, since a
+    # broken-but-present TF install means ANN/CNN/GCN silently never run
+    # (and never show up in MLflow) with no indication why.
+    warnings.warn(
+        f"TensorFlow could not be imported, ANN/CNN/GCN models will be skipped: " f"{type(_tf_import_error).__name__}: {_tf_import_error}",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 import mlflow
 import mlflow.sklearn
@@ -54,8 +67,27 @@ def _rmse(y_true, y_pred) -> float:
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
 
 
-def _log_run_to_mlflow(name: str, model: Any, metrics: dict[str, float], kind: str) -> None:
+def _log_run_to_mlflow(
+    name: str,
+    model: Any,
+    metrics: dict[str, float],
+    kind: str,
+    params: dict[str, Any] | None = None,
+    session_id: str | None = None,
+) -> None:
     """Log one model's params/metrics/artifact as a nested MLflow run.
+
+    `params` lets the caller pass explicit hyperparameters to log (used for
+    the Keras models, whose architecture isn't exposed via `get_params()`
+    the way sklearn/xgboost estimators are). If omitted, classic models fall
+    back to introspecting `model.get_params()`.
+
+    `session_id` is a human-readable identifier (e.g. a timestamp) shared by
+    every model trained in the same call to `train_and_evaluate_models`. It's
+    logged as a tag so that runs from the same training session can be
+    filtered/grouped together in the MLflow/DagsHub UI, instead of every
+    session's runs being interleaved by model name with no way to tell which
+    training pass they came from.
 
     No-ops silently if there is no active parent run (i.e. MLflow tracking
     was not configured by the caller), so this stays safe to call from
@@ -66,8 +98,12 @@ def _log_run_to_mlflow(name: str, model: Any, metrics: dict[str, float], kind: s
 
     with mlflow.start_run(run_name=name, nested=True):
         mlflow.set_tag("model_family", kind)
+        if session_id:
+            mlflow.set_tag("session_id", session_id)
         try:
-            if kind == "classic" and hasattr(model, "get_params"):
+            if params:
+                mlflow.log_params(params)
+            elif kind == "classic" and hasattr(model, "get_params"):
                 mlflow.log_params({k: v for k, v in model.get_params().items() if v is not None})
         except Exception:
             pass
@@ -179,7 +215,7 @@ def _build_gcn(input_shape: tuple[int, int]) -> Any:
     return model
 
 
-def train_and_evaluate_models(X_train, y_train, X_test, y_test) -> dict[str, Any]:
+def train_and_evaluate_models(X_train, y_train, X_test, y_test, session_id: str | None = None) -> dict[str, Any]:
     models = build_model_candidates()
     trained_models: dict[str, Any] = {}
     predictions: dict[str, list[float]] = {}
@@ -196,7 +232,7 @@ def train_and_evaluate_models(X_train, y_train, X_test, y_test) -> dict[str, Any
             "mae": float(mean_absolute_error(y_test, prediction)),
             "r2": float(r2_score(y_test, prediction)),
         }
-        _log_run_to_mlflow(name, model, metrics[name], kind="classic")
+        _log_run_to_mlflow(name, model, metrics[name], kind="classic", session_id=session_id)
 
     if tf is not None:
         scaler = StandardScaler()
@@ -205,7 +241,7 @@ def train_and_evaluate_models(X_train, y_train, X_test, y_test) -> dict[str, Any
         callbacks = [EarlyStopping(monitor="val_loss", patience=20, restore_best_weights=True)]
 
         ann_model = _build_ann(X_train_scaled.shape[1])
-        ann_model.fit(
+        ann_history = ann_model.fit(
             X_train_scaled,
             y_train,
             epochs=100,
@@ -222,12 +258,27 @@ def train_and_evaluate_models(X_train, y_train, X_test, y_test) -> dict[str, Any
             "mae": float(mean_absolute_error(y_test, ann_prediction)),
             "r2": float(r2_score(y_test, ann_prediction)),
         }
-        _log_run_to_mlflow("ANN", ann_model, metrics["ANN"], kind="keras")
+        ann_params = {
+            "architecture": "Dense(64)-Dropout(0.2)-Dense(32)-Dropout(0.1)-Dense(1)",
+            "n_hidden_layers": 2,
+            "hidden_units": "64,32",
+            "dropout_rates": "0.2,0.1",
+            "l2_reg": 0.01,
+            "optimizer": "adam",
+            "loss": "mse",
+            "epochs_max": 100,
+            "epochs_trained": len(ann_history.history["loss"]),
+            "batch_size": 16,
+            "early_stopping_patience": 20,
+            "validation_split": 0.1,
+            "input_dim": int(X_train_scaled.shape[1]),
+        }
+        _log_run_to_mlflow("ANN", ann_model, metrics["ANN"], kind="keras", params=ann_params, session_id=session_id)
 
         cnn_train = X_train_scaled.reshape(X_train_scaled.shape[0], X_train_scaled.shape[1], 1)
         cnn_test = X_test_scaled.reshape(X_test_scaled.shape[0], X_test_scaled.shape[1], 1)
         cnn_model = _build_cnn((cnn_train.shape[1], 1))
-        cnn_model.fit(
+        cnn_history = cnn_model.fit(
             cnn_train,
             y_train,
             epochs=100,
@@ -244,10 +295,26 @@ def train_and_evaluate_models(X_train, y_train, X_test, y_test) -> dict[str, Any
             "mae": float(mean_absolute_error(y_test, cnn_prediction)),
             "r2": float(r2_score(y_test, cnn_prediction)),
         }
-        _log_run_to_mlflow("CNN", cnn_model, metrics["CNN"], kind="keras")
+        cnn_params = {
+            "architecture": "Conv1D(32,k=2)-Flatten-Dense(32)-Dropout(0.1)-Dense(1)",
+            "conv_filters": 32,
+            "conv_kernel_size": 2,
+            "conv_l2_reg": 0.001,
+            "dense_units": 32,
+            "dropout_rate": 0.1,
+            "optimizer": "adam",
+            "loss": "mse",
+            "epochs_max": 100,
+            "epochs_trained": len(cnn_history.history["loss"]),
+            "batch_size": 16,
+            "early_stopping_patience": 20,
+            "validation_split": 0.1,
+            "input_shape": f"({cnn_train.shape[1]}, 1)",
+        }
+        _log_run_to_mlflow("CNN", cnn_model, metrics["CNN"], kind="keras", params=cnn_params, session_id=session_id)
 
         gcn_model = _build_gcn((cnn_train.shape[1], 1))
-        gcn_model.fit(
+        gcn_history = gcn_model.fit(
             cnn_train,
             y_train,
             epochs=100,
@@ -264,7 +331,20 @@ def train_and_evaluate_models(X_train, y_train, X_test, y_test) -> dict[str, Any
             "mae": float(mean_absolute_error(y_test, gcn_prediction)),
             "r2": float(r2_score(y_test, gcn_prediction)),
         }
-        _log_run_to_mlflow("GCN", gcn_model, metrics["GCN"], kind="keras")
+        gcn_params = {
+            "architecture": "SimpleGCN(16)-Flatten-Dense(16)-Dense(1)",
+            "gcn_units": 16,
+            "dense_units": 16,
+            "optimizer": "adam",
+            "loss": "mse",
+            "epochs_max": 100,
+            "epochs_trained": len(gcn_history.history["loss"]),
+            "batch_size": 16,
+            "early_stopping_patience": 20,
+            "validation_split": 0.1,
+            "input_shape": f"({cnn_train.shape[1]}, 1)",
+        }
+        _log_run_to_mlflow("GCN", gcn_model, metrics["GCN"], kind="keras", params=gcn_params, session_id=session_id)
         artifacts["dl_scaler"] = scaler
 
     best_model_name = min(metrics, key=lambda candidate: metrics[candidate]["rmse"])
