@@ -1,0 +1,25 @@
+version: 1
+services:
+  - type: web
+    name: backend
+    env: docker
+    dockerfilePath: Dockerfile.backend
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    plan: starter
+    healthCheckPath: /health
+
+  - type: web
+    name: frontend
+    env: docker
+    dockerfilePath: Dockerfile.frontend
+    startCommand: uvicorn frontend.app:app --host 0.0.0.0 --port $PORT
+    plan: starter
+    healthCheckPath: /
+
+cronJobs:
+  - name: nightly-pipeline
+    schedule: "0 3 * * *"
+    dockerfilePath: Dockerfile.backend
+    command: python -m backend.train --refresh && python scripts/quality_gates.py
+    plan: starter
+    # Configure secrets (MLflow, DVC) in the Render dashboard's Environment section
