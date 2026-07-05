@@ -7,7 +7,7 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -17,9 +17,18 @@ jobs:
         run: |
           pip install -r requirements-backend.txt
           pip install -r requirements-dev.txt
+      - name: Install DVC and pull data (if remote configured)
+        run: |
+          pip install dvc
+          if [ -n "${{ secrets.DAGSHUB_USER_TOKEN }}" ]; then
+            dvc remote modify dagshub --local auth basic || true
+            dvc remote modify dagshub --local user ${{ secrets.DAGSHUB_REPO_OWNER }} || true
+            dvc remote modify dagshub --local password ${{ secrets.DAGSHUB_USER_TOKEN }} || true
+          fi
+          dvc pull || true
       - name: Check code quality
         run: |
           black --check .
-          ruff check .
+          ruff check . --extend-exclude data
       - name: Run tests
         run: python -m pytest -q

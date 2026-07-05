@@ -23,3 +23,13 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def run_training(refresh: bool = False) -> dict:
+    """Programmatic entrypoint used by tests and other automation.
+
+    Returns the training result (summary and metrics).
+    """
+    service = ClimateService()
+    result = service.train(force=refresh)
+    return {"summary": result["summary"], "metrics": result["metrics"]}

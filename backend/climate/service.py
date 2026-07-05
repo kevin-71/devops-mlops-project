@@ -256,6 +256,10 @@ class ClimateService:
             raise RuntimeError("Training did not produce an in-memory state")
         return self._state
 
+    def reset_state(self) -> None:
+        """Clear the in-memory cached state so the service will retrain on next use."""
+        self._state = None
+
     def forecast(self, months_ahead: int = 60, model_name: str | None = None) -> dict[str, Any]:
         state = self.load_or_train()
         selected_model_name = model_name or state["best_model_name"]
