@@ -129,15 +129,15 @@ Cette section décrit l'architecture applicative et les pratiques DevOps / MLOps
 
 ```mermaid
 flowchart LR
-  A[Data sources<br>/data (DVC)] --> B[Ingestion & nettoyage<br>backend/climate/data.py]
-  B --> C[Feature engineering<br>backend/climate/features.py]
-  C --> D[Training & evaluation<br>backend/climate/models.py]
-  D --> E[Orchestrator & persistence<br>backend/climate/service.py]
-  E --> F[API / Serving<br>backend/main.py (FastAPI)]
-  F --> G[Frontend / Dashboard<br>frontend/app.py (Streamlit)]
-  E --> H[Model artifacts<br>models/ (joblib, keras, scaler)]
-  I[Tests & CI] --> B
-  J[Monitoring<br>prometheus/] --> F
+  A["Data sources<br>/data (DVC)"] --> B["Ingestion & nettoyage<br>backend/climate/data.py"]
+  B --> C["Feature engineering<br>backend/climate/features.py"]
+  C --> D["Training & evaluation<br>backend/climate/models.py"]
+  D --> E["Orchestrator & persistence<br>backend/climate/service.py"]
+  E --> F["API / Serving<br>backend/main.py (FastAPI)"]
+  F --> G["Frontend / Dashboard<br>frontend/app.py (Streamlit)"]
+  E --> H["Model artifacts<br>models/ (joblib, keras, scaler)"]
+  I["Tests & CI"] --> B
+  J["Monitoring<br>prometheus/"] --> F
 ```
 
 ### Principes clés
