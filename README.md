@@ -123,27 +123,75 @@ Le projet suit une architecture simple mais complète :
 
 ## Architecture globale
 
+Cette section décrit l'architecture applicative et les pratiques DevOps / MLOps liées au projet : tests, environnements (staging / production), déploiement, promotion de modèles, et observabilité.
+
+### Vue d'ensemble
+
 ```mermaid
 flowchart LR
-    A[Data sources\n/data] --> B[backend/climate/data.py\nnettoyage et fusion]
-    B --> C[backend/climate/features.py\nsplit temporel]
-    C --> D[backend/climate/models.py\nentraînement et métriques]
-    D --> E[backend/climate/service.py\npersistance et prévision]
-    E --> F[backend/main.py\nAPI FastAPI]
-    F --> G[frontend/app.py\nDashboard Streamlit]
-    E --> H[models/\njoblib, keras, scaler]
-    I[tests/test_data.py] --> B
+    A[Data sources\n/data (DVC)] --> B[Ingestion & nettoyage\nbackend/climate/data.py]
+    B --> C[Feature engineering\nbackend/climate/features.py]
+    C --> D[Training & evaluation\nbackend/climate/models.py]
+    D --> E[Orchestrator & persistence\nbackend/climate/service.py]
+    E --> F[API / Serving\nbackend/main.py (FastAPI)]
+    F --> G[Frontend / Dashboard\nfrontend/app.py (Streamlit)]
+    E --> H[Model artifacts\nmodels/ (joblib, keras, scaler)]
+    I[Tests & CI] --> B
+    J[Monitoring\nprometheus/] --> F
 ```
 
-Flux de données principal :
+### Principes clés
+- Reproductibilité : les données et artefacts sont versionnés avec DVC (`data/`, `models/`) ; `dvc pull` est requis après `git pull`.
+- Isolation : `DATA_DIR` et `MODEL_DIR` sont configurables via variables d'environnement (voir `backend/climate/settings.py`).
+- Promotion contrôlée : quality gates (scripts/quality_gates.py) valident les métriques avant promotion en production (MLflow / fallback local).
+- Observabilité : métriques & exposition applicative + Prometheus pour scrapping et alerting.
 
-1. Les CSV sont lus depuis `data/`.
-2. `backend/climate/data.py` fusionne température et CO2, puis crée un frame exploitable.
-3. `backend/climate/features.py` construit le split temporel et les variables d'entrée.
-4. `backend/climate/models.py` entraîne les modèles classiques et, si disponible, les modèles deep learning.
-5. `backend/climate/service.py` stocke l'état, charge les artefacts et génère les prévisions futures.
-6. `backend/main.py` expose ces capacités via HTTP.
-7. `frontend/app.py` affiche les résultats, les métriques et la projection.
+### Testing (strategie)
+- Unit tests : `pytest` pour fonctions de préparation des données, logique métier et points d'entrée (ex : `tests/test_data.py`, `tests/test_training_entrypoint.py`).
+- Data tests : tests qui valident la présence et la structure des fichiers DVC ; ceux-ci sont conçus pour `skip` en CI si les artefacts DVC ne sont pas présents.
+- Integration / smoke tests : exécuter le backend via Docker Compose puis lancer un petit script de vérification (`/health`, `/status`, endpoints `/forecast`).
+- Lint & format : `ruff` et `black` via `pre-commit` et CI.
+
+Commandes courantes pour tests locaux :
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+black --check .
+ruff check .
+```
+
+### Environnements & staging
+- Staging : déployer l'image candidate dans un environnement isolé (docker compose ou k8s namespace) et exécuter les quality gates et smoke tests.
+- Production : promotion explicite via MLflow Model Registry ou écriture de `models/production.json` en fallback.
+- Promotion safe-by-design : la promotion ne doit être possible que si les gates (RMSE, latence, smoke tests) passent.
+
+Recommandation de workflow Git :
+- `main` → production stable
+- `staging` → image candidate déployée automatiquement par CI/CD
+- feature branches → PR vers `staging` puis tests & gates
+
+### CI / CD et automation
+- CI (GitHub Actions) :
+  - Installe les dépendances backend et dev
+  - Exécute lint, format, unit tests
+  - Optionnel : `dvc pull` + tests d'intégration si secrets DVC/MLflow configurés
+- CD (promotion) :
+  - Pipeline de promotion déclenchée manuellement ou via merge sur `staging`
+  - `scripts/quality_gates.py` exécute les validations et appelle MLflow/DagsHub si configuré
+  - En cas de succès, modèle promu dans MLflow Model Registry; sinon, publication locale de `models/production.json`
+
+### Déploiement
+- Local / dev : `docker compose up --build` démarre `backend`, `frontend` et services annexes.
+- Staging / Production : recommander d'utiliser un orchestrateur (Kubernetes) pour scalabilité ; images Docker construites depuis `Dockerfile.backend` et `Dockerfile.frontend`.
+- Variables sensibles : stocker dans le gestionnaire de secrets de la plateforme (GitHub Secrets, Kubernetes Secrets) et charger via `.env` pour local.
+
+### Observabilité & monitoring
+- Exposer métriques applicatives (endpoint `/metrics`) et scrapper avec Prometheus (config dans `prometheus/prometheus.yml`).
+- Exporter logs structurés (JSON) et définir alertes basées sur erreurs/latence ou dérive de métriques modèle.
+
+### Gestion des artefacts & rollback
+- Artefacts persistés dans `models/` et versionnés via DVC. Les meilleurs modèles sont enregistrés dans MLflow quand disponible.
+- Rollback : rétablir la version précédemment promue depuis le Model Registry ou restaurer `models/` via DVC/`git checkout` + `dvc pull`.
 
 ---
 
